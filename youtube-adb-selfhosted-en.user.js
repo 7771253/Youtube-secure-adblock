@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         youtube-adb (self-hosted)
 // @namespace    https://github.com/7771253/Youtube-secure-adblock
-// @version      6.21.1
+// @version      6.21.2
 // @description  A script to remove YouTube ads, including static ads and video ads, without interfering with the network and ensuring safety. Self-hosted update source.
 // @author       7771253
 // @match        *://*.youtube.com/*
@@ -37,7 +37,7 @@
         'ytm-companion-ad-renderer',                                                                      // Mobile web skippable-ad link container
     ];
 
-    window.dev = true; // set true for console debug logging
+    window.dev = false; // set true for console debug logging
 
     /** Format a Date as 'YYYY-MM-DD HH:mm:ss' */
     function moment(time) {
@@ -75,7 +75,13 @@
     }
 
     function generateRemoveADCssText(selectors) {
-        return selectors.map((selector) => `${selector}{display:none!important}`).join(' ');
+        const hideRules = selectors.map((selector) => `${selector}{display:none!important}`).join(' ');
+        // Instantly hide the video element itself the moment YouTube marks the player as
+        // showing an ad, so nothing is visually rendered even before skipAd() reacts.
+        // This is a pure-CSS backstop against any timing gap in the JS-based skip logic.
+        const instantHideRule =
+            '.html5-video-player.ad-showing .html5-main-video{visibility:hidden!important;filter:brightness(0)!important}';
+        return `${hideRules} ${instantHideRule}`;
     }
 
     function generateRemoveADHTMLElement(id) {
@@ -157,8 +163,18 @@
         }
     }
 
+    let lastSkipAttempt = 0; // throttle guard, ms timestamp of last skipAd() run
+
     function skipAd() {
         if (!video) return;
+
+        // Throttle: the MutationObserver can fire dozens of times per second on YouTube's
+        // busy DOM, and skipAd() doesn't need to run that often. Without this guard, every
+        // observer tick re-clicks the skip button and re-checks currentTime, which can pile
+        // up redundant work and contend with the ad node's own paint/removal.
+        const now = Date.now();
+        if (now - lastSkipAttempt < 150) return;
+        lastSkipAttempt = now;
 
         const skipButton =
             document.querySelector('.ytp-ad-skip-button') ||
@@ -175,7 +191,6 @@
 
         if (skipButton) {
             const delayTime = 0.5;
-            setTimeout(skipAd, delayTime * 1000); // retry if click didn't register
             if (video.currentTime > delayTime) {
                 video.currentTime = video.duration; // force-finish the ad
                 log('Skipped ad via fallback button on special account');
