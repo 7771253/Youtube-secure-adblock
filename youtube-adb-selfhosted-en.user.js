@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         youtube-adb (self-hosted)
 // @namespace    https://github.com/7771253/Youtube-secure-adblock
-// @version      6.21.5
+// @version      6.21.6
 // @description  A script to remove YouTube ads, including static ads and video ads, without interfering with the network and ensuring safety. Self-hosted update source.
-// @author       you
+// @author       7771253
 // @match        *://*.youtube.com/*
 // @exclude      *://accounts.youtube.com/*
 // @exclude      *://www.youtube.com/live_chat_replay*
@@ -77,18 +77,19 @@
     function generateRemoveADCssText(selectors) {
         const hideRules = selectors.map((selector) => `${selector}{display:none!important}`).join(' ');
         // Instantly hide the entire ad-related area of the player the moment YouTube marks
-        // it as being in ANY ad-lifecycle state, so nothing is visually rendered even before
-        // skipAd() reacts. Debug snapshots showed the player carries three sequential classes
-        // during an ad: "ad-created" (earliest), "ad-showing", and "ad-interrupting". Keying
-        // only off "ad-showing" left a gap where "ad-created" was already present -- meaning
-        // the ad's video source can start rendering before "ad-showing" attaches. Hiding on
-        // all three closes that gap by hooking the earliest available signal.
-        const adStateSelector = (inner) =>
-            `.html5-video-player.ad-created ${inner},.html5-video-player.ad-showing ${inner},.html5-video-player.ad-interrupting ${inner}`;
+        // it as showing an ad, so nothing is visually rendered even before skipAd() reacts.
+        //
+        // IMPORTANT: only "ad-showing" is used as the trigger here. An earlier version also
+        // keyed off "ad-created" and "ad-interrupting" (seen alongside "ad-showing" in debug
+        // snapshots), assuming all three toggle together per-ad. In practice "ad-created" and
+        // "ad-interrupting" appear to be sticky -- once set during a session they can remain
+        // on the player even after the ad ends -- which caused the video to stay permanently
+        // hidden (black screen with audio) after the first ad. "ad-showing" is the one class
+        // confirmed to toggle on/off precisely with the ad's actual on-screen state.
         const instantHideRule =
-            `${adStateSelector('.html5-main-video')}{visibility:hidden!important;filter:brightness(0)!important} ` +
-            `${adStateSelector('.html5-video-container')}{visibility:hidden!important;background:#000!important} ` +
-            `${adStateSelector('.ytp-ad-overlay-container')},${adStateSelector('.ytp-ad-text')},${adStateSelector('.ytp-ad-simple-ad-badge')}{visibility:hidden!important}`;
+            '.html5-video-player.ad-showing .html5-main-video{visibility:hidden!important;filter:brightness(0)!important} ' +
+            '.html5-video-player.ad-showing .html5-video-container{visibility:hidden!important;background:#000!important} ' +
+            '.html5-video-player.ad-showing .ytp-ad-overlay-container,.html5-video-player.ad-showing .ytp-ad-text,.html5-video-player.ad-showing .ytp-ad-simple-ad-badge{visibility:hidden!important}';
         return `${hideRules} ${instantHideRule}`;
     }
 
