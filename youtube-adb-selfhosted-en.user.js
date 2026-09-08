@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         youtube-adb (self-hosted)
 // @namespace    https://github.com/7771253/Youtube-secure-adblock
-// @version      6.21.2
+// @version      6.21.4
 // @description  A script to remove YouTube ads, including static ads and video ads, without interfering with the network and ensuring safety. Self-hosted update source.
-// @author       7771253
+// @author       you
 // @match        *://*.youtube.com/*
 // @exclude      *://accounts.youtube.com/*
 // @exclude      *://www.youtube.com/live_chat_replay*
@@ -37,7 +37,7 @@
         'ytm-companion-ad-renderer',                                                                      // Mobile web skippable-ad link container
     ];
 
-    window.dev = true; // set true for console debug logging
+    window.dev = false; // set true for console debug logging
 
     /** Format a Date as 'YYYY-MM-DD HH:mm:ss' */
     function moment(time) {
@@ -76,11 +76,14 @@
 
     function generateRemoveADCssText(selectors) {
         const hideRules = selectors.map((selector) => `${selector}{display:none!important}`).join(' ');
-        // Instantly hide the video element itself the moment YouTube marks the player as
-        // showing an ad, so nothing is visually rendered even before skipAd() reacts.
-        // This is a pure-CSS backstop against any timing gap in the JS-based skip logic.
+        // Instantly hide the entire ad-related area of the player the moment YouTube marks
+        // it as showing an ad, so nothing is visually rendered even before skipAd() reacts.
+        // Broadened beyond just the <video> tag to also cover overlay elements (ad badges,
+        // skip-countdown text, etc.) that can flash during transitions between ads in a pod.
         const instantHideRule =
-            '.html5-video-player.ad-showing .html5-main-video{visibility:hidden!important;filter:brightness(0)!important}';
+            '.html5-video-player.ad-showing .html5-main-video{visibility:hidden!important;filter:brightness(0)!important} ' +
+            '.html5-video-player.ad-showing .html5-video-container{visibility:hidden!important;background:#000!important} ' +
+            '.html5-video-player.ad-showing .ytp-ad-overlay-container,.html5-video-player.ad-showing .ytp-ad-text,.html5-video-player.ad-showing .ytp-ad-simple-ad-badge{visibility:hidden!important}';
         return `${hideRules} ${instantHideRule}`;
     }
 
@@ -163,6 +166,23 @@
         }
     }
 
+    let lastCapturedAdSnapshot = false; // prevents re-logging the same ad repeatedly
+
+    function captureAdSnapshotForDebugging() {
+        if (!window.dev) return;
+        const player = document.querySelector('.html5-video-player.ad-showing');
+        if (player) {
+            if (!lastCapturedAdSnapshot) {
+                lastCapturedAdSnapshot = true;
+                console.log('=== AD SNAPSHOT START ===');
+                console.log(player.outerHTML.substring(0, 4000));
+                console.log('=== AD SNAPSHOT END ===');
+            }
+        } else {
+            lastCapturedAdSnapshot = false; // reset once ad-showing clears, ready for next ad
+        }
+    }
+
     let lastSkipAttempt = 0; // throttle guard, ms timestamp of last skipAd() run
 
     function skipAd() {
@@ -217,6 +237,7 @@
         const observer = new MutationObserver(() => {
             getVideoDom();
             closeOverlay();
+            captureAdSnapshotForDebugging();
             skipAd();
             playAfterAd();
         });
