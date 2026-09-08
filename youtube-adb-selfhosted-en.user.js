@@ -37,7 +37,7 @@
         'ytm-companion-ad-renderer',                                                                      // Mobile web skippable-ad link container
     ];
 
-    window.dev = false; // set true for console debug logging
+    window.dev = true; // set true for console debug logging
 
     /** Format a Date as 'YYYY-MM-DD HH:mm:ss' */
     function moment(time) {
