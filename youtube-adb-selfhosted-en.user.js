@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         youtube-adb (self-hosted)
 // @namespace    https://github.com/7771253/Youtube-secure-adblock
-// @version      6.21.4
+// @version      6.21.5
 // @description  A script to remove YouTube ads, including static ads and video ads, without interfering with the network and ensuring safety. Self-hosted update source.
 // @author       you
 // @match        *://*.youtube.com/*
@@ -77,13 +77,18 @@
     function generateRemoveADCssText(selectors) {
         const hideRules = selectors.map((selector) => `${selector}{display:none!important}`).join(' ');
         // Instantly hide the entire ad-related area of the player the moment YouTube marks
-        // it as showing an ad, so nothing is visually rendered even before skipAd() reacts.
-        // Broadened beyond just the <video> tag to also cover overlay elements (ad badges,
-        // skip-countdown text, etc.) that can flash during transitions between ads in a pod.
+        // it as being in ANY ad-lifecycle state, so nothing is visually rendered even before
+        // skipAd() reacts. Debug snapshots showed the player carries three sequential classes
+        // during an ad: "ad-created" (earliest), "ad-showing", and "ad-interrupting". Keying
+        // only off "ad-showing" left a gap where "ad-created" was already present -- meaning
+        // the ad's video source can start rendering before "ad-showing" attaches. Hiding on
+        // all three closes that gap by hooking the earliest available signal.
+        const adStateSelector = (inner) =>
+            `.html5-video-player.ad-created ${inner},.html5-video-player.ad-showing ${inner},.html5-video-player.ad-interrupting ${inner}`;
         const instantHideRule =
-            '.html5-video-player.ad-showing .html5-main-video{visibility:hidden!important;filter:brightness(0)!important} ' +
-            '.html5-video-player.ad-showing .html5-video-container{visibility:hidden!important;background:#000!important} ' +
-            '.html5-video-player.ad-showing .ytp-ad-overlay-container,.html5-video-player.ad-showing .ytp-ad-text,.html5-video-player.ad-showing .ytp-ad-simple-ad-badge{visibility:hidden!important}';
+            `${adStateSelector('.html5-main-video')}{visibility:hidden!important;filter:brightness(0)!important} ` +
+            `${adStateSelector('.html5-video-container')}{visibility:hidden!important;background:#000!important} ` +
+            `${adStateSelector('.ytp-ad-overlay-container')},${adStateSelector('.ytp-ad-text')},${adStateSelector('.ytp-ad-simple-ad-badge')}{visibility:hidden!important}`;
         return `${hideRules} ${instantHideRule}`;
     }
 
