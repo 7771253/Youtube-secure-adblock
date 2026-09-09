@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         youtube-adb (self-hosted)
 // @namespace    https://github.com/7771253/Youtube-secure-adblock
-// @version      6.21.6
+// @version      6.21.7
 // @description  A script to remove YouTube ads, including static ads and video ads, without interfering with the network and ensuring safety. Self-hosted update source.
 // @author       7771253
 // @match        *://*.youtube.com/*
@@ -37,7 +37,7 @@
         'ytm-companion-ad-renderer',                                                                      // Mobile web skippable-ad link container
     ];
 
-    window.dev = true; // set true for console debug logging
+    window.dev = false; // set true for console debug logging
 
     /** Format a Date as 'YYYY-MM-DD HH:mm:ss' */
     function moment(time) {
@@ -281,7 +281,48 @@
         }
     }
 
+    function patchVideoSrcHideRace() {
+        // Extra flash guard: CSS only hides the video once YouTube's "ad-showing" class is
+        // actually present in the DOM. If the ad's video source gets assigned even slightly
+        // before that class attaches, one or two frames of the ad can paint unhidden -- this
+        // is the flash some ads still show through despite the CSS rule above.
+        //
+        // To close that gap, we intercept the native <video>.src setter itself. The instant
+        // ANY new source is assigned to the main video element, we forcibly hide it via an
+        // !important inline style, then release that hold on the next animation frame. By
+        // then, YouTube's own ad-lifecycle class will already be attached (it's set in the
+        // same code path as the source swap), so the persistent ad-showing CSS rule takes
+        // over seamlessly. Releasing unconditionally after one frame -- rather than only
+        // when we've confirmed it's not an ad -- guarantees this never gets stuck hiding a
+        // normal video permanently, since the CSS rule (not this patch) is what keeps an ad
+        // hidden for its full duration.
+        try {
+            const proto = HTMLMediaElement.prototype;
+            const descriptor = Object.getOwnPropertyDescriptor(proto, 'src');
+            if (!descriptor || !descriptor.set) return;
+            Object.defineProperty(proto, 'src', {
+                configurable: true,
+                enumerable: descriptor.enumerable,
+                get: descriptor.get,
+                set: function (value) {
+                    if (this.classList && this.classList.contains('html5-main-video')) {
+                        this.style.setProperty('visibility', 'hidden', 'important');
+                        requestAnimationFrame(() => {
+                            this.style.removeProperty('visibility');
+                        });
+                    }
+                    return descriptor.set.call(this, value);
+                },
+            });
+            log('Patched video src setter for flash guard');
+        } catch (e) {
+            // Fail silently -- the CSS-based hiding above still applies as a fallback.
+            log('Could not patch video src setter, continuing with CSS-only hiding');
+        }
+    }
+
     function main() {
+        patchVideoSrcHideRace(); // extra guard against the ad-source-swap flash
         generateRemoveADHTMLElement('removeADHTMLElement'); // hide static/UI ads
         removePlayerAD('removePlayerAD'); // handle in-player video ads
 
